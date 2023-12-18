@@ -1,0 +1,707 @@
+---
+title: "Kidney Cancer Analysis"
+author: "Aswini Sivakumar and Swathi Ramidi"
+date: "2023-11-27"
+output: html_document
+---
+
+## Step 1 - Understanding the data
+
+## Background of the project:
+
+In recent years, kidney cancer has emerged as a significant health concern with notable implications for patient outcomes. As one of the leading causes of cancer-related morbidity and mortality worldwide, understanding the molecular intricacies of kidney cancer becomes imperative for informed clinical decision-making. The Cancer Genome Atlas (TCGA) stands as a pioneering initiative, providing an expansive repository of genomic data to unravel the genetic underpinnings of various cancer types. Within this landscape, our project focuses on the TCGA Kidney Cancer clinical dataset, aiming to predict patients' tumor status based on a comprehensive set of clinical factors. 
+
+This dataset encompasses diverse patient profiles, including information on age, ethnicity, cancer type, fraction of genome altered, tumor grade, hemoglobin levels, and tumor dimensions. The predictive modeling derived from this analysis holds promise for enhancing our ability to tailor treatment strategies, fostering a deeper understanding of the disease's molecular basis. 
+
+In this project, we will analyze `The Cancer Genome Atlas (TCGA)` Kidney Cancer clinical dataset to predict the patient's status, specifically whether they have a tumor or are tumor-free. This prediction will be based on the patient's profile, which includes various factors such as age, ethnicity, cancer type, fraction of genome altered, tumor grade, hemoglobin level, and tumor dimensions.We have total of 34 columns in our data.
+
+The majority of kidney cancers can be categorized into three common types:
+
+Kidney Renal Papillary Cell Carcinoma - kirp_tcga
+Kidney Chromophobe - kich_tcga
+Kidney Renal Clear Cell Carcinoma - kirc_tcga
+
+The definitions of the columns are:
+
+    * Study_ID - 3 categories of kidney cancer - kirp_tcga,kich_tcga,kirc_tcga
+    * Diagnosis_Age - Age of the patient when he/she got diagnosed
+    * M_stage - Cancer metastasis stage code to represent the presence of distant metastasis 
+    * LN_Stage - Code to represent the involvement of regional Lymph Nodes
+    * NDSAJCC - Cancer code to represent based on the disease spread from the original site to other parts of the body 
+    * T_Stage - Tumor stage code to represent the size of the primary tumor
+    * Days_to_Sample_Collection - Days to sample collection
+    * Disease_Free_Status - Whether the patient is disease free or having recurred/progressed tumor
+    * Ethnicity - Whether the patient is Hispanic/Latino or not
+    * Frac_Genome_Altered - metric used to quantify the proportion of a patient's genome that has undergone alterations
+    * Hemoglobin_level - Indicates the Hemoglobin level of the patient (Low, Normal and Elevated)
+    * Is_NTTA_Prior_Resection - Indicator of patient's history of neoadjuvant treatment
+    * Prior_Cancer_Occurence - Indicator for Whether the patient has a history of cancer
+    * Primary_Tumor_laterality - Designates the side on which the tumor originated
+    * Longest_Dimension - Represents the longest measurable dimension of the tumor
+    * Positive_Lymph_nodes - Number of positive lymph nodes
+    * Lymph_Nodes_Examined - Total number of lymph nodes pathologically assessed for disease.
+    * Mutation_Count - Total number of genetic mutations found in the DNA of cancer cells
+    * Survival_Months - The number of months the patient survived after the diagnosis
+    * Survival_Status - Whether the patient is living or deceased
+    * Platelet_count - Platelet count
+    * TPC_Indicator - Indicator that the tissue was procured in parallel to the project.
+    * Race - Whether the patient is Asian, White or Black/African-American 
+    * TRC_Indicator - Indicator that the tissue was obtained and stored prior to the initiation of the project.
+    * Serum_calcium_level - Indicates the Serum calcium level of the patient (Low, Normal and Elevated)
+    * Sex - Whether the patient is Male or Female
+    * Shortest_Dimension - Represents the shortest measurable dimension of the tumor
+    * Second_Longest_Dimension - Represents the second longest measurable dimension of the tumor
+    * TMB - Tumor Mutational Burden - total number of mutations in the protein-coding region of a tumor's genome
+    * Smoking_Category - Based on the smoking history of the patient ranging from 1 for light smokers to 5 for heavy smoker
+    * WBC - Indicates the White Blood cells count of the patient (Low, Normal and Elevated)
+    * Tissue_Source_Site - Indicates the anatomic site of the tumor
+    * Neoplasm_Status - The status of the patient - with tumor or tumor free
+
+## Step 2 - Load the required libraries
+
+At this step, we are loading all the required libraries for this project.
+
+```{r load_libraries}
+library(caret) 
+library(ggplot2)
+library(lattice)
+library(skimr) 
+library(dplyr)
+library(randomForest)
+library(class)
+library(tidyr)
+library(stringr)
+library(scales)
+library(plotly)
+library(forcats) 
+library(rpart)   
+library(rpart.plot) 
+```
+
+## Step 3 - Load data and read it to a dataframe
+
+We have read the csv file from the `data` directory in our project folder. We have converted the strings to factors while reading the file.
+
+```{r read_file}
+#kidney_df <- read.csv("../Downloads/Kidney_cancer_data.csv")
+kidney_df <- read.csv("./Kidney_cancer_data.csv", stringsAsFactors = TRUE)
+```
+
+Using the `skim` function to understand the summary of all the variables.
+
+```{r skim_df}
+skim(kidney_df)
+```
+
+Using the `str` function to understand the data types of each of the variables.
+
+```{r str_df}
+str(kidney_df)
+```
+
+The below table represents the counts of our target variable `Neoplasm_Status`.
+
+```{r target_variable_counts}
+table(kidney_df$Neoplasm_Status)
+```
+
+We have re-coded the target variable to 0 and 1 where 0 represents `TUMOR FREE` and 1 represents `WITH TUMOR`.
+
+```{r re-coding_target_variable}
+# Considering "TUMOR FREE" is the reference category as 0 and "WITH TUMOR"  as 1
+kidney_df <- kidney_df %>%
+  mutate(Neoplasm_Status_binary = ifelse(Neoplasm_Status == "WITH TUMOR", 1, 0))
+
+# Convert into factor
+kidney_df$Neoplasm_Status_binary <- factor(kidney_df$Neoplasm_Status_binary, levels=c("0", "1"))
+
+
+str(kidney_df$Neoplasm_Status_binary)
+```
+
+Validating the proportion of the new re-coded variable.
+
+```{r prop_table_Neoplasm_Status_binary}
+prop.table(table(kidney_df$Neoplasm_Status_binary))
+```
+
+Understanding the summary statistics of kidney cancer dataset.
+
+```{r summary}
+summary(kidney_df)
+```
+
+### Data preprocessing 
+
+From the above summary statistics of our data, we identified there are 3 variables `Frac_Genome_Altered` , `Hemoglobin_level` and `Serum_calcium_level` with missing values. 
+
+As `Frac_Genome_Altered` is a numeric variable, replacing the missing values with the mean value.
+
+```{r prep_Frac_Genome_Altered}
+
+mean_value <- mean(kidney_df$Frac_Genome_Altered, na.rm = TRUE)
+kidney_df <- kidney_df %>%
+  mutate(Frac_Genome_Altered = ifelse(is.na(Frac_Genome_Altered), mean_value, Frac_Genome_Altered))
+```
+
+As `Hemoglobin_level` is a categorical variable, replacing the missing values with the maximum occurring value.
+
+```{r Hemoglobin_level}
+
+kidney_df$Hemoglobin_level <- as.character(kidney_df$Hemoglobin_level)
+max_occuring_value <- names(sort(table(kidney_df$Hemoglobin_level), decreasing = TRUE))[1]
+kidney_df$Hemoglobin_level[is.na(kidney_df$Hemoglobin_level)] <- max_occuring_value
+kidney_df$Hemoglobin_level <- as.factor(kidney_df$Hemoglobin_level)
+```
+
+As `Serum_calcium_level` is a categorical variable, replacing the missing values with the maximum occuring value.
+
+```{r Serum_calcium_levels}
+
+kidney_df$Serum_calcium_level <- as.character(kidney_df$Serum_calcium_level)
+max_occuring_value <- names(sort(table(kidney_df$Serum_calcium_level), decreasing = TRUE))[1]
+kidney_df$Serum_calcium_level[is.na(kidney_df$Serum_calcium_level)] <- max_occuring_value
+kidney_df$Serum_calcium_level <- as.factor(kidney_df$Serum_calcium_level)
+```
+
+## Step 4 - Exploratory Data Analysis
+
+### EDA 1
+
+```{r Diagnosis_age distribution}
+
+ggplot(kidney_df, aes(x = Diagnosis_Age)) +
+  geom_histogram(binwidth = 5, fill = "skyblue", color = "black") +
+  labs(title = "Histogram: Diagnosis Age", x = "Diagnosis Age", y = "Frequency") +
+  theme_minimal()
+```
+
+> From the histogram for distribution of Diagnosis age of the patients in our data is mostly between 40 and 75 years. 
+
+### EDA 2
+
+```{r Neoplasm_Status_by_sex_of_patient}
+ggplot(kidney_df, aes(x = Neoplasm_Status, fill = Sex)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Bar Chart: Neoplasm Status by Sex", x = "Neoplasm Status", y = "Count", fill = "Sex") +
+  theme_minimal()
+```
+
+> From the bar chart, there is more chance for a male to be with tumor compared to female 
+
+### EDA 3
+
+```{r Survival_months_by_Ethnicity}
+ggplot(kidney_df, aes(x = Ethnicity, y = Survival_Months)) +
+  geom_boxplot() +
+  labs(title = "Box Plot: Survival Months by Ethnicity", x = "Ethnicity", y = "Survival Months") +
+  theme_minimal()
+```
+
+> The mean survial months of patients from Hispanic or Latino ethnicity is 55 months, and non hispanic ethnicity is around 30, there are some outliers for ethnicity not hispanic/latino between survival months 125 and 200
+
+### EDA 4
+
+```{r boxplot_age_studyID}
+ggplot(kidney_df , aes(x=Study_ID , color = Study_ID))  +
+  geom_boxplot(aes(y = Diagnosis_Age)) +
+  ggtitle("Box Plot of Diagnosis_Age on Study_ID")
+```
+
+> From the above plot, we can see that the average diagnosis age of the patients tested for KIRP cancer type is higher than the others. This suggests the possibility that KIRP cancer tends to occur in older individuals.
+
+### EDA 5
+
+```{r NDSAJCC_by_Diagnosis_Age}
+ggplot(kidney_df, aes(x = NDSAJCC, y = Diagnosis_Age)) +
+  geom_boxplot() +
+  labs(title = "Diagnosis Age by NDSAJCC", x = "NDSAJCC", y = "Diagnosis Age") +
+  theme_minimal()
+```
+
+> Above box plot shows the relation between diagnosis age and NDSAJCC stage, the average age of diagnosis for different stages of NDSAJCC is between 55 and 70, there are outliers for stages 0 1 and 4. The width of IQR box for stage 4 is less compared to other stages
+
+### EDA 6
+
+```{r Neoplasm_status_by_study_ID}
+ggplot(subset(kidney_df, select = c(Study_ID, Neoplasm_Status)), aes(x = Study_ID, fill = Neoplasm_Status)) +
+  geom_bar() +
+  labs(title = "Neoplasm Status by Study ID", x = "Study ID", y = "Count", fill = "Neoplasm Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+>From the above stacked bar chart, most number of tumor cases were recorded for study ID KIRC type. 
+
+### EDA 7
+
+```{r Smoking category by neoplasm status}
+ggplot(kidney_df, aes(x = factor(Smoking_Category), fill = Neoplasm_Status)) +
+  geom_bar(position = "stack") +
+  labs(title = "Neoplasm Status by Smoking Category", x = "Smoking Category", y = "Count", fill = "Neoplasm Status") +
+  theme_minimal()
+```
+
+> Above chart shows relation between smoking category and Neoplasm status with smoking category 5 being highest and 1 being lowest, count of patients with tumor increases with increasing somking category.
+
+### EDA 8
+
+```{r longest dimension by t stage  }
+ggplot(kidney_df, aes(x = T_Stage, y = Longest_Dimension)) +
+  geom_boxplot(fill = "lightblue", color = "darkblue", alpha = 0.7) +
+  labs(title = "Box Plot: Longest Dimension by T Stage", x = "T Stage", y = "Longest Dimension") +
+  theme_minimal()
+```
+
+> Box plot shows relation between longest measurable dimension of tumor and T stage(size of primary tumor), The average longest dimension ranges from 0-2.5 for diiferent T stages. The width of IQR box is more for stage T2b compared to others, there are few outliersfor stages T1a, T2, T3, T3b, T4.The avergae longest dimension of measurable tumor increases with increase in T stage.
+
+### EDA 9
+
+```{r longest dimension by Ln stage}
+ggplot(kidney_df, aes(x = LN_Stage, y = Longest_Dimension)) +
+  geom_boxplot(fill = "lightgreen", color = "darkgreen", alpha = 0.7) +
+  labs(title = "Box Plot: Longest Dimension by LN Stage", x = "LN Stage", y = "Longest Dimension") +
+  theme_minimal()
+```
+
+> Box plot shows the relation between Longest dimension and LN stage, The mean of LN stage N0 and N2 is between 1.5-1.7 and for N1 and NX is 1 and 1.3. 
+
+### EDA 10
+
+```{r longest dimension by m stage}
+ggplot(kidney_df, aes(x = M_stage, y = Longest_Dimension)) +
+  geom_boxplot(fill = "lightcoral", color = "darkred", alpha = 0.7) +
+  labs(title = "Box Plot: Longest Dimension by M Stage", x = "M Stage", y = "Longest Dimension") +
+  theme_minimal()
+```
+
+> The avergare Longest dimension for M stage ranges from 0-1.7, the width of IQR box for M1 stage is more comapred to others, there are outliers for M stages M0 and MX
+
+### EDA 11
+
+```{r Primary_tumor_laterality_vs_neoplasm_status}
+ggplot(kidney_df, aes(x = Primary_Tumor_Laterality, fill = Neoplasm_Status)) +
+  geom_bar(position = "stack") +
+  labs(title = "Stacked Bar Chart: Primary Tumor Laterality by Neoplasm Status",
+       x = "Primary Tumor Laterality", y = "Count", fill = "Neoplasm Status") +
+  theme_minimal()
+```
+
+> From the above chart, if the primary tumor laterality is left, there is higher chnace that patient neoplasm status is with tumor followed by right primary tumor laterality, if the primary tumor laterality is bilateral, there is high chnace that patient is tumor free. 
+
+### EDA 12
+
+```{r neoplasm by WBC}
+ggplot(kidney_df, aes(x = WBC, fill = Neoplasm_Status)) +
+  geom_bar(position = "dodge", stat = "count") +
+  labs(title = "Grouped Bar Chart: Neoplasm Status by WBC",
+       x = "WBC", y = "Count", fill = "Neoplasm Status") +
+  theme_minimal()
+```
+
+> From the above chart, WBC seems to be random for patients with or without tumor.
+
+### EDA 13
+
+```{r corr_var}
+corr_mat <- cor(kidney_df[, c( 3 , 11 , 16 , 19 , 20 , 28, 31 )])
+corrplot::corrplot(corr_mat, )
+```
+
+> From the correlation plot of few numeric variables in our dataset, we can see that TMB and mutation count are highly correlated and Shortest and longest dimension are highly correlated. 
+
+### EDA 14
+
+```{r Neo_Status_by_Type}
+Neo_Status_by_Type <- kidney_df %>% 
+                        group_by(Neoplasm_Status,Study_ID) %>%  
+                        summarise(count=n(),.groups = 'drop') %>% 
+                        pivot_wider(names_from = Study_ID, values_from = count, values_fill = 0)
+```
+
+Creating a mosaicplot to visualize the patient's Neoplasm status based on the cancer types.
+
+```{r mosaicplot}
+mosaicplot(table(kidney_df$Study_ID, kidney_df$Neoplasm_Status), 
+           main="Distribution of patients by Neoplasm status and study ID",
+           xlab = "study ID",
+           ylab = "Neoplasm status",
+           col = c("pink" ,"lightblue"))
+
+Neo_Status_by_Type
+```
+
+> Most of the patients were diagnosed as `TUMOR FREE`. Also, the data comprises of more patients tested for KIRC cancer type, followed by the KIRP type and then KICH type. We can see that the classes are quite imbalanced with more records for the `TUMOR FREE` neoplasm status.
+
+### EDA 15
+
+```{r with_tumor_Race}
+with_tumor_Race <- kidney_df %>% 
+                filter(Neoplasm_Status == 'WITH TUMOR') %>% 
+                group_by(Race) %>%  
+                summarise(TumorCountbyRace=n()) %>% 
+                arrange(desc(TumorCountbyRace))
+
+with_tumor_Race
+```
+
+```{r plotly_with_tumor_Race}
+plot_ly(data = with_tumor_Race, labels = ~Race, values = ~TumorCountbyRace, type = "pie" ,
+  marker = list(line = list(color = 'black', width = 1))) %>%
+  layout(title = "Distribution of patients with tumor based on Race",
+         showlegend = TRUE)
+
+```
+
+> We can see that, out of all the patients diagnosed `WITH TUMOR`, 89.3% were White, 9.64% were Black or African American and 1.02% were Asians.
+
+### EDA 16
+
+```{r plateletcountvsneoplasmstat}
+plot_ly(data = kidney_df, x = ~Platelet_count, color = ~Neoplasm_Status, type = "histogram", 
+        histnorm = "percent", colors = c("pink", "lightblue")) %>%
+  layout(
+    title = "Distribution of Neoplasm_Status based on Platelet Count",
+    xaxis = list(title = "Platelet Count"),
+    yaxis = list(title = "Percentage"),
+    barmode = "group")
+```
+
+> Most of the patients with either `Elevated` or `Low` platelet_count were diagnosed `With Tumor`, where as most of the patients with `Normal` platelet counts  were diagnosed `Tumor Free`. This tells us that `Platelet_Count` is not the most significant predictor of `Neoplasm_Status`.
+
+### EDA 17
+
+```{r priorcanceroccurvsneoplasmstat}
+ggplot(data=kidney_df, aes(x=Prior_Cancer_Occurence , fill = Neoplasm_Status )) +
+geom_bar(color="black") +
+scale_fill_manual(values=c('pink','lightblue')) +
+  labs(title=" Distribution of Neoplasm_Status based on Prior Cancer Occurence") +
+  stat_count(geom = "text", colour = "red", size = 4, aes(label = ..count..), position=position_stack(vjust=0.6))
+
+```
+
+> This graphs shows that there are 104 patients who have a history of cancer but currently have a `Tumor Free` Neoplasm_status. Another interesting observation is that around 163 patients currently have a tumor provided that they do not have a cancer history. In converse to the general assumption that tumors are likely to develop in patients with a history of cancer, our data tells us that `Prior_Cancer_Occurence` might not be a good predictor of `Neoplasm_status`.
+
+### EDA 18
+
+```{r diagnosisagebysurvivalstatus}
+ggplot(kidney_df , aes(x=Survival_Status , color = Survival_Status))  +
+  geom_boxplot(aes(y = Diagnosis_Age)) +
+  ggtitle("Box Plot of Diagnosis_Age on Survival_Status")
+```
+
+> The average age of patients at the time of the study is higher among those who have deceased compared to those who are still alive. Further investigation into the cause of death among the deceased patients will help us to verify whether an older age at diagnosis correlates with the likelihood of a tumor being fatal, taking into consideration the patient's health condition.
+
+### EDA 19
+
+```{r gg_NDSAJCC_Survival_Months}
+ggplot(kidney_df) +
+  geom_histogram(aes(x=Survival_Months, y = after_stat(ncount)), color="black", fill="#56B4E9") +
+  facet_wrap(~NDSAJCC) +
+  scale_y_continuous(labels = scales::percent_format(scale = 100)) +
+  labs(title = "Frequency percentages Histogram of Survival Months based on NDSAJCC stages", x = "Survival Months", y = "Percentage of the # Patients")
+```
+
+> 
+
+### EDA 20
+
+```{r gg_NDSAJCC_Serum_calcium_level}
+
+ggplot(data=kidney_df, aes(x=NDSAJCC , fill = Serum_calcium_level )) +
+geom_bar(color="black") +
+scale_fill_manual(values=c('pink','lightblue','grey')) +
+  labs(title=" Distribution of Serum calcium level based on different stage") +
+  stat_count(geom = "text", colour = "red", size = 4, aes(label = ..count..), position=position_stack(vjust=0.9))
+```
+
+> We can see that most of the patients who were diagnosed at Stage I and Stage III have low serum_calcium_level. These could be the stages that might affect the serum_calcium_level. This shows that `serum_calcium_level` can be a good predictor of `Neoplasm status` as these stages are related to them.
+
+### Factor recoding
+
+The structure of our dataframe revealed that the variable `Tissue_Source_Site` has around 56 different categories and would cause error when included in the models. 
+
+
+```{r Tissue_Source_Site_check}
+ kidney_df %>% 
+   group_by(Tissue_Source_Site) %>% 
+   summarise(
+     n = n(),
+   ) %>% 
+   arrange(desc(n))
+```
+
+So we recoded the levels that has less than 10 records to one combined level `Other`.
+
+```{r factor_recoding}
+kidney_df$Tissue_Source_Site_recoded <- fct_lump_min(kidney_df$Tissue_Source_Site, 10, other_level = "Other")
+```
+
+Verifying the count of the new column `Tissue_Source_Site_recoded`.
+
+```{r Tissue_Source_Site_recoded}
+ kidney_df %>% 
+   group_by(Tissue_Source_Site_recoded) %>% 
+   summarise(
+     n = n(),
+   ) %>% 
+   arrange(desc(n))
+```
+
+We are removing all the unwanted columns from the dataframe.
+
+```{r removing_unwanted_columns}
+kidney_df <- select(kidney_df, -Neoplasm_Status, -Patient_ID, -Tissue_Source_Site )
+```
+
+## Step 5 - Partitioning the data
+
+Partitioning the data set into 80% training data and 20% test data.
+
+```{r partition_data}
+# Simple partition into train (80%) and test (20%) set 
+set.seed(17) 
+trainIndex <- createDataPartition(kidney_df$Neoplasm_Status_binary, p = .8, 
+                                  list = FALSE, 
+                                  times = 1)
+
+kidney_train <- kidney_df[as.vector(trainIndex), ]  
+kidney_test <- kidney_df[-as.vector(trainIndex), ]
+```
+
+As the classes of our target variable is imbalanced, we are checking if a similar proportion of both the classes are present in the training and the test dataset.
+
+```{r validating_target_split}
+table(kidney_train$Neoplasm_Status_binary)
+prop.table(table(kidney_train$Neoplasm_Status_binary))
+table(kidney_test$Neoplasm_Status_binary)
+prop.table(table(kidney_test$Neoplasm_Status_binary))
+```
+
+## Step 6 - Building and evaluation of predictive classification models
+
+### Model 1 : Null model
+We started with a simple Null model which would be to simply predict that Neoplasm_Status_binary is 0. On the training data we saw that we’d be ~77.42% accurate.
+
+```{r null_model}
+# null model for training data
+model_train_null <- rep(0, nrow(kidney_train))
+model_train_null <- factor(model_train_null, levels = levels(kidney_train$Neoplasm_Status_binary))
+
+# null model for test data
+model_test_null <- rep(0, nrow(kidney_test))
+model_test_null <- factor(model_test_null, levels = levels(kidney_test$Neoplasm_Status_binary))
+
+# confusion matrices for training and test sets
+cm_train_null <- confusionMatrix(model_train_null, kidney_train$Neoplasm_Status_binary, positive = "1")
+cm_test_null <- confusionMatrix(model_test_null, kidney_test$Neoplasm_Status_binary, positive = "1")
+
+print("Confusion Matrix for Training Data (Null Model):")
+print(cm_train_null)
+
+print("Confusion Matrix for Test Data (Null Model):")
+print(cm_test_null)
+
+```
+
+> The accuracy is consistent on both training and test data sets. The sensitivity on both sets of data is 0, null model fails to identify any positive instnaces however the specificity on training and test data is 1, null model idenitfies all negative instances correctly.We will keep this as a base line model, our expectation is to see if other models perform better.
+
+### Model 2.1 : Logistic Regression 
+
+```{r Logistic_regression_model}
+model_lr1 <- glm(Neoplasm_Status_binary ~ . ,
+                data=kidney_train, family=binomial(link="logit"))
+
+class_train_lr1 <- as.factor((model_lr1$fit > 0.5)*1)
+
+cm_train_lr1 <- confusionMatrix(class_train_lr1, kidney_train$Neoplasm_Status_binary, positive="1")
+cm_train_lr1
+
+```
+
+> On the training data, accuracy is 99.14%, sensitivity is 97.47% and specificity is 99.63%. For 2 instances, the model misclassified the actual 0’s to be 1. For 4 instances the model misclassified the actual 1’s to be 0. This shows a good model fit.
+
+```{r logistic regression on test data}
+pred_lr1 <- predict(model_lr1, newdata = kidney_test, type = "response")
+```
+
+
+```{r LR1_Pred}
+class_test_lr1 <- as.factor((pred_lr1 > 0.5) * 1)
+
+cm_test_lr1 <- confusionMatrix(class_test_lr1, kidney_test$Neoplasm_Status_binary, positive="1")
+cm_test_lr1
+```
+
+> On the test data, accuracy is 87.93%, sensitivity is 71.79% and specificity is 92.59%. For 10 instances out of 174, the model misclassified the actual 0’s to be 1. For 11 instances out of 174, the model misclassified the actual 1’s to be 0. This shows a moderate model accuracy.
+
+
+### Model2.2 Logistic regression model with important varibales
+
+```{r Logistic_regression_model with important variables}
+
+model_lr2 <- glm(Neoplasm_Status_binary ~ Smoking_Category + Disease_Free_Status + NDSAJCC +
+                            Tissue_Source_Site_recoded + Survival_Status + M_stage + T_Stage + Longest_Dimension ,
+                data=kidney_train, family=binomial(link="logit"))
+
+class_train_lr2 <- as.factor((model_lr2$fit > 0.5)*1)
+
+cm_train_lr2 <- confusionMatrix(class_train_lr2, kidney_train$Neoplasm_Status_binary, positive="1")
+cm_train_lr2
+
+```
+
+> On the training data, accuracy is 96.29%, sensitivity is 90.51% and specificity is 97.97%. For 11 instances, the model misclassified the actual 0’s to be 1. For 15 instances the model misclassified the actual 1’s to be 0. This shows a good model fit.
+
+```{r LR2_predict}
+pred_lr2 <- predict(model_lr2, newdata = kidney_test, type = "response")
+```
+
+```{r Logistic_regression_model on test data}
+class_test_lr2 <- as.factor((pred_lr2 > 0.5) * 1)
+
+cm_test_lr2 <- confusionMatrix(class_test_lr2, kidney_test$Neoplasm_Status_binary, positive="1")
+cm_test_lr2
+
+```
+
+> On the test data, accuracy is 93.68%, sensitivity is 76.92% and specificity is 98.52%. For 2 instances out of 174, the model misclassified the actual 0’s to be 1. For 9 instances out of 174, the model misclassified the actual 1’s to be 0. This shows a moderate model accuracy. 
+
+### Model 3 : Decision Tree with all variables
+
+Performing decision tree by including all the variables in the model.
+
+```{r model_tree1}
+model_tree1 <- rpart(Neoplasm_Status_binary ~ . , data=kidney_train)
+
+class_train_tree1 <- predict(model_tree1, type="class")
+
+cm_train_tree1 <- confusionMatrix(as.factor(class_train_tree1), kidney_train$Neoplasm_Status_binary , positive="1")
+cm_train_tree1
+```
+
+> On the training data, accuracy is 96%, sensitivity is 84.18% and specificity is 99.45%. For 3 instances, the model misclassified the actual 0’s to be 1. For 25 instances the model misclassified the actual 1’s to be 0. This shows a good model fit.
+
+```{r pred_tree1}
+pred_tree1 <- predict(model_tree1, newdata = kidney_test, type = "class")
+
+cm_test_tree1 <- confusionMatrix(pred_tree1, kidney_test$Neoplasm_Status_binary , positive="1")
+cm_test_tree1
+```
+
+> On the test data, accuracy is 91.95%, sensitivity is 71.79% and specificity is 97.78%. For 3 instances out of 174, the model misclassified the actual 0’s to be 1. For 11 instances out of 174, the model misclassified the actual 1’s to be 0. This shows a moderate model accuracy.
+
+### Model 4.1 : Random Forest with all the variables
+
+Performing random forest by including all the variables in the model.
+
+```{r model_rf1}
+model_rf1 <- randomForest(Neoplasm_Status_binary ~ . , data=kidney_train, importance=TRUE)
+
+class_rf1 <- predict(model_rf1, type="class")
+
+cm_train_rf1 <- confusionMatrix(as.factor(class_rf1), kidney_train$Neoplasm_Status_binary, positive="1")
+cm_train_rf1
+```
+
+> On the training data, accuracy is 94.86%, sensitivity is 84.18% and specificity is 97.97%. For 11 instances, the model misclassified the actual 0’s to be 1. For 25 instances the model misclassified the actual 1’s to be 0. This shows a good model fit.
+
+```{r pred_rf1}
+pred_rf1 <- predict(model_rf1, newdata = kidney_test, type = "class")
+
+cm_test_rf1 <- confusionMatrix(pred_rf1, kidney_test$Neoplasm_Status_binary , positive="1")
+cm_test_rf1
+```
+
+> On the test data, accuracy is 93.1%, sensitivity is 76.92% and specificity is 97.78%. For 3 instances out of 174, the model misclassified the actual 0’s to be 1. For 9 instances out of 174, the model misclassified the actual 1’s to be 0. This shows a moderate model accuracy.
+
+### Variable importance 
+
+Plotting the Variable Importance Plot to identify the most important variables that can be used while predicting `Neoplasm_status`.
+
+```{r df_imp}
+df_imp <- as.data.frame(model_rf1$importance) %>% 
+  arrange(desc(MeanDecreaseGini))
+
+df_imp <- tibble::rownames_to_column(df_imp, "variable")
+df_imp
+```
+
+```{r plot_df_imp}
+ggplot(data=df_imp) + geom_bar(aes(x=reorder(variable, MeanDecreaseAccuracy), y=MeanDecreaseAccuracy), 
+                               stat = "identity") + coord_flip()
+```
+
+> The Variable Importance Plot shows us that the top most important variables that are significant predictor od `Neoplasm_status` are `Smoking_Category`, `Disease_Free_Status`, `NDSAJCC`, `Tissue_source_site_recoded`,`Survival_status`,`M_stage`,`T_stage` and `Longest_Dimension`.
+
+### Model 4.2 : Random Forest with only the important variables
+
+Performing the random forest model with only the important variables identified above.
+
+```{r model_rf2}
+model_rf2 <- randomForest(Neoplasm_Status_binary ~ Smoking_Category + Disease_Free_Status + NDSAJCC +
+                            Tissue_Source_Site_recoded + Survival_Status + M_stage + T_Stage + Longest_Dimension  , data=kidney_train, importance=TRUE)
+
+class_rf2 <- predict(model_rf2, type="class")
+
+cm_train_rf2 <- confusionMatrix(as.factor(class_rf2), kidney_train$Neoplasm_Status_binary, positive="1")
+cm_train_rf2
+```
+
+> On the training data, accuracy is 94.71%, sensitivity is 86.71% and specificity is 97.05%. For 16 instances, the model misclassified the actual 0’s to be 1. For 21 instances the model misclassified the actual 1’s to be 0. This shows a good model fit.
+
+```{r pred_rf2}
+pred_rf2 <- predict(model_rf2, newdata = kidney_test, type = "class")
+
+cm_test_rf2 <- confusionMatrix(pred_rf2, kidney_test$Neoplasm_Status_binary , positive="1")
+cm_test_rf2
+```
+
+> On the test data, accuracy is 92.53%, sensitivity is 76.92% and specificity is 97.04%. For 4 instances out of 174, the model misclassified the actual 0’s to be 1. For 9 instances out of 174, the model misclassified the actual 1’s to be 0. This shows a moderate model accuracy.
+
+> With only fewer variables, we were able to achieve almost a slightly higher accuracy and sensitivity on the test data.
+
+## Step 7 - Model Comparison
+
+Creating a function that can be used to get the metrics from all the models.
+
+```{r cm_summary_function}
+cm_summary <- function(cm, label){
+  sprintf("%s: Accuracy = %8.4f Sensitivity = %8.4f Specificity = %8.4f", 
+          label,
+          cm$overall["Accuracy"],
+          cm$byClass["Sensitivity"],
+          cm$byClass['Specificity'])
+  
+}
+```
+
+
+```{r compare_resultsOn_training_dataset}
+print("Comparing the results on training dataset")
+cm_summary(cm_train_lr1,"Logistic Regression")
+cm_summary(cm_train_lr2,"Logistic Regression with important variables")
+cm_summary(cm_train_tree1,"Decision Tree")
+cm_summary(cm_train_rf1,"Random Forest")
+```
+
+```{r compare_resultsOn_test_dataset}
+print("Comparing the results on test dataset")
+cm_summary(cm_test_lr1,"Logistic Regression")
+cm_summary(cm_test_lr2,"Logistic Regression with important variables")
+cm_summary(cm_test_tree1,"Decision Tree")
+cm_summary(cm_test_rf1,"Random Forest")
+```
+
+
+## Step 8 - Conclusions and improvements
+
+> From the above summary, the Logistic Regression model with important variables shows better accuracy, sensitivity, and specificity on both training and test datasets. It is more likely to generalize well to new data. According to the principle of parsimony, we always consider model with less variables and good performance as the better model.
+> Decision Tree and Random Forest show a very slight drop in performance on the test dataset compared to the training dataset however there is no sign of overfitting.
+
+## Improvements
+
+> We have limited data for this analysis, it would have been more useful if we had atleast 3-4k records in our analysis.
+
+>More data on patients medical history, habits or addictions would have been made this analysis more intresting to identify if a person might have tumor in future or not. 
+
