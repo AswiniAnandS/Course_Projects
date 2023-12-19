@@ -13,3 +13,4 @@ https://www.cbioportal.org/study/clinicalData?id=kirp_tcga
 After removing the records with missing values for most of the variables there were 874 records.
 
 Kidney_cancer_project.Rmd - This file contains the R code utilized for the project analysis
+r
