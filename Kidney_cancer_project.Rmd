@@ -1,6 +1,6 @@
 ---
 title: "Kidney Cancer Analysis"
-author: "Aswini Sivakumar and Swathi Ramidi"
+author: "Aswini Sivakumar"
 date: "2023-11-27"
 output: html_document
 ---
